@@ -1,4 +1,4 @@
-#%%
+# %%
 import numpy as np
 
 # Set the parameters
@@ -9,7 +9,9 @@ N = 100
 beta = [-3, 1, 1.0, -1.0]
 sig2 = 0.5
 ltnt = 0
-#%%
+
+
+# %%
 class ergm_generating_process:
     def __init__(self, N, beta, sig2, ltnt):
         self.beta = beta
@@ -29,17 +31,30 @@ class ergm_generating_process:
         self.Xn.append(X)
         self.Zn.append(Z)
         return H
-        
+
     def network_metropolis(self, sample, r=1000):
         for s in range(sample):
-            H = self.naive_network() 
+            H = self.naive_network()
             Wn = np.double(H > 0)
 
             for rr in range(r):
-                p = H + beta[2]*Wn + beta[3]*np.dot(Wn, Wn)
-                p = ((-1)**Wn) * p
-                Wn = np.where(np.log10(np.random.rand(*Wn.shape)) <= p, 1 - Wn, Wn)
-            print([np.sum(np.sum(Wn)), np.max(np.sum(Wn, axis=0)), np.max(np.sum(Wn, axis=1))])
+                p = H + beta[2] * Wn + beta[3] * np.dot(Wn, Wn)
+                p = ((-1) ** Wn) * p
+                # Ensure matrix is symmetric
+                mask = np.triu(
+                    np.log10(np.random.rand(Wn.shape[0], Wn.shape[0])) <= p, k=1
+                )
+                Wn = np.where(
+                    mask, 1 - Wn, Wn
+                )  # replace elements in the upper triangle
+                Wn = np.triu(Wn) + np.triu(Wn, 1).T
+            print(
+                [
+                    np.sum(np.sum(Wn)),
+                    np.max(np.sum(Wn, axis=0)),
+                    np.max(np.sum(Wn, axis=1)),
+                ]
+            )
+
             self.Wn.append(Wn)
         return self.Wn, self.Xn, self.Zn
-
