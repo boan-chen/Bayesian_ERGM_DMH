@@ -33,7 +33,7 @@ The DGP results are based on a beta parameterization (-3, 1, 1, -1) using our Py
 3. Liang, Faming. (2010). A double Metropolis–Hastings sampler for spatial models with intractable normalizing constants. Journal of Statistical Computation and Simulation. 80. 1007-1022.
 4. Hermans, J., Begy, V. &amp; Louppe, G.. (2020). Likelihood-free MCMC with Amortized Approximate Ratio Estimators. <i>Proceedings of the 37th International Conference on Machine Learning</i>, in <i>Proceedings of Machine Learning Research</i> 119:4239-4248 Available from https://proceedings.mlr.press/v119/hermans20a.html.
 5. Salazar, R., Toral, R. Simulated Annealing Using Hybrid Monte Carlo. J Stat Phys 89, 1047–1060 (1997). https://doi.org/10.1007/BF02764221
-6. Betancourt, M. (Year). A Conceptual Introduction to Hamiltonian Monte Carlo. arXiv, arXiv:1701.02434 [stat.ME]. https://doi.org/10.48550/arXiv.1701.02434
+6. Betancourt, M. (2017). A Conceptual Introduction to Hamiltonian Monte Carlo. arXiv, arXiv:1701.02434 [stat.ME]. https://doi.org/10.48550/arXiv.1701.02434
 
 
 
