@@ -24,7 +24,7 @@ class ergm_DMH:
                 current_network = self.auxiliary_network(current_beta)
             proposed_beta = self.adaptive_beta(current_beta)
             proposed_network = self.auxiliary_network(proposed_beta)
-            if abs(np.sum(np.sum(proposed_network))) - np.sum(np.sum(current_network)) > 60:
+            if abs(np.sum(np.sum(proposed_network))) - np.sum(np.sum(self.Wn)) > 60:
                 i = i - 1
                 gate = 0
                 continue
@@ -39,7 +39,7 @@ class ergm_DMH:
         self.beta.append(self.beta_load[-1])
         
         # Identical to the above, but update beta and acc
-        print("Sampling phase proposing beta...")
+        print("Sampling phase for proposing beta...")
         gate = 1
         acc_rate = 0
         for i in tqdm(range(0, rr)):
@@ -48,7 +48,7 @@ class ergm_DMH:
                 current_network = self.auxiliary_network(current_beta)
             proposed_beta = self.adaptive_beta(current_beta)
             proposed_network = self.auxiliary_network(proposed_beta)
-            if abs(np.sum(np.sum(proposed_network))) - np.sum(np.sum(current_network)) > 60:
+            if abs(np.sum(np.sum(proposed_network))) - np.sum(np.sum(self.Wn)) > 60:
                 i = i - 1
                 gate = 0
                 continue
@@ -60,9 +60,9 @@ class ergm_DMH:
                     gate = 1
                     self.acc += 1
                     acc_rate = self.acc / (i + 1)
-                    if acc_rate < 0.3:
+                    if acc_rate < 0.1:
                         self.step = self.step * 0.95
-                    elif acc_rate > 0.7:
+                    elif acc_rate > 0.4:
                         self.step = self.step * 1.05
                 else:
                     gate = 0
@@ -148,4 +148,9 @@ beta, acc_rate = estimator.beta_sampling()
 import matplotlib.pyplot as plt
 beta = np.array(beta)
 plt.hist(beta[:, 0])
+# %%
+beta_test = estimator.beta[-1]
+W_test = estimator.auxiliary_network(beta_test)
+print(f"# of edges: {np.sum(np.sum(W_test))}")
+print(f"max degree: {np.max(np.sum(W_test, axis=0))}")
 # %%
