@@ -24,6 +24,7 @@ The R code is an evolving program aimed at optimizing the use of rstan within ou
 
 ## Data Generating Process (DGP) Results
 The DGP results are based on a beta parameterization (-3, 1, 1, -1) using our Python-based DGP code. Results include a histogram of edges and a density plot depicting the number of edges and the maximum degree generated.
+
 ![image](https://github.com/boan-chen/Bayesian_ERGM/assets/108161781/90469e47-890f-4474-b465-f82bb4625f00)
 ![image](https://github.com/boan-chen/Bayesian_ERGM/assets/108161781/961b4932-223e-4841-b7e6-59a60ba46cdc)
 
