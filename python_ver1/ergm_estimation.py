@@ -128,8 +128,8 @@ class ergm_double_metropolis_hastings:
             ZZ0 = [
                 np.sum(W),
                 np.sum(np.dot(W, (X - X.T))),
-                np.sum(np.dot(W1, W1)) / 2,
-                np.sum(np.dot(W1, np.dot(W1, W1))) / 3,
+                np.sum(np.dot(W, W)) / 2,
+                np.sum(np.dot(W, np.dot(W, W))) / 3,
             ]
             dzz = np.array(ZZ1) - np.array(ZZ0)
             dbeta = np.array(beta1 - beta0).T
@@ -175,13 +175,15 @@ class ergm_double_metropolis_hastings:
         print("acc_rate1 =", acc_rate1[self.t])
         return beta, sig2, z1, acc_rate0, acc_rate1
 
-
 # %%
 from DGP import ergm_generating_process
 
-N, beta, sig2, ltnt = 10, [-3, 1, 1.0, -1.0], 0.5, 0
+N, beta, sig2, ltnt = 100, [-3, 1, 1.0, -1.0], 0.5, 0
 network_generator = ergm_generating_process(N, beta, sig2, ltnt)
 Wn, Xn, Zn = network_generator.network_metropolis(1)
+# check the network
+print(f"# of edges: {np.sum(np.sum(Wn[0]))}")
+print(f"max degree: {np.max(np.sum(Wn[0], axis=0))}")
 # %%
 estimator = ergm_double_metropolis_hastings(
     Wn[0], Xn[0], Zn[0], ltnt=0, beta0=[-3.5, 1.1, 1.1, -1.1]
