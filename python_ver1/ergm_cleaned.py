@@ -124,7 +124,7 @@ class ergm_DMH:
             np.sum(np.inner(W, np.inner(W.T, W))) / 3,
         ]
         dzz = np.array(ZZ1) - np.array(ZZ0)
-        dbeta = np.array(beta1 - beta0).T
+        dbeta = np.array(beta0 - beta1).T
         pp = (np.dot(dzz, dbeta))
         return pp
 
