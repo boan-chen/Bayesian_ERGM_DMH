@@ -9,18 +9,18 @@ class ergm_DMH:
         self.Wn = Wn
         self.Xn = Xn
         self.beta0 = beta0
-        self.step = 0.01
+        self.step = 0.0025
         self.acc = 0
+        self.beta_load = []
         self.beta = []
-        self.beta.append(beta0)
-        
+        self.beta_load.append(beta0)
     
     def beta_sampling(self, rr = 1000, burnin = 500):
-        print("Burning phase for proposing beta...")
+        print("Burn-in phase for proposing beta...")
         gate = 1
         for i in tqdm(range(0,  burnin)):
             if gate == 1:
-                current_beta = self.beta[-1]
+                current_beta = self.beta_load[-1]
                 current_network = self.auxiliary_network(current_beta)
             proposed_beta = self.adaptive_beta(current_beta)
             proposed_network = self.auxiliary_network(proposed_beta)
@@ -30,11 +30,13 @@ class ergm_DMH:
                 continue
             else:
                 pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
-                if np.log10(np.random.rand()) <= pp:
+                if np.log10(np.random.rand()) <= min(0, pp):
                     current_beta = proposed_beta
+                    self.beta_load.append(current_beta)
                     gate = 1
                 else:
                     gate = 0
+        self.beta.append(self.beta_load[-1])
         
         # Identical to the above, but update beta and acc
         print("Sampling phase proposing beta...")
@@ -42,7 +44,7 @@ class ergm_DMH:
         acc_rate = 0
         for i in tqdm(range(0, rr)):
             if gate == 1:
-                current_beta = self.beta[-1]
+                current_beta = self.beta_load[-1]
                 current_network = self.auxiliary_network(current_beta)
             proposed_beta = self.adaptive_beta(current_beta)
             proposed_network = self.auxiliary_network(proposed_beta)
@@ -52,15 +54,16 @@ class ergm_DMH:
                 continue
             else:
                 pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
-                if np.log10(np.random.rand()) <= pp:
+                if np.log10(np.random.rand()) <= min(0, pp):
+                    self.beta_load.append(proposed_beta)
                     self.beta.append(proposed_beta)
                     gate = 1
                     self.acc += 1
                     acc_rate = self.acc / (i + 1)
                     if acc_rate < 0.3:
-                        self.step = self.step * 0.9
+                        self.step = self.step * 0.95
                     elif acc_rate > 0.7:
-                        self.step = self.step * 1.1
+                        self.step = self.step * 1.05
                 else:
                     gate = 0
             if i % 100 == 0:
@@ -94,11 +97,11 @@ class ergm_DMH:
         
         a1 = 0.6
         a2 = 0.4
-        beta = self.beta
+        beta = self.beta_load
         if len(beta) < burnin:
             beta1 = mvnorm.rvs(beta0, self.step * np.identity(len(beta0)))
         else:
-            cov_beta = np.cov(np.array(estimator.beta).T)
+            cov_beta = np.cov(np.array(beta).T)
             scaling_factor = 2.38 ** 2 / len(beta0)
             beta1 = (
                 mvnorm.rvs(beta0, cov_beta * scaling_factor) * a1
@@ -144,5 +147,5 @@ beta, acc_rate = estimator.beta_sampling()
 # %%
 import matplotlib.pyplot as plt
 beta = np.array(beta)
-plt.hist(beta[:, 4])
+plt.hist(beta[:, 0])
 # %%
