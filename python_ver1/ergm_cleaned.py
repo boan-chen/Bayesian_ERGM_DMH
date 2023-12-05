@@ -46,9 +46,8 @@ class ergm_DMH:
             if i % 100 == 0:
                 print("beta =", self.beta[-1])
                 print("acc_rate =", acc_rate)
-            if gate == 1:
-                current_beta = self.beta_load[-1]
-                current_network = self.auxiliary_network(current_beta)
+            current_beta = self.beta_load[-1]
+            current_network = self.auxiliary_network(current_beta)
             proposed_beta = self.adaptive_beta(current_beta)
             proposed_network = self.auxiliary_network(proposed_beta)
             if abs(np.sum(np.sum(proposed_network))) - np.sum(np.sum(self.Wn)) > 60:
@@ -79,7 +78,7 @@ class ergm_DMH:
         for _ in range(0, r + burnin):
             p = H + beta[2] * Wn + beta[3] * np.inner(Wn.T, Wn)
             p = ((-1) ** Wn) * p
-            mask = np.triu(np.log10(np.random.rand(Wn.shape[0], Wn.shape[0])) <= p, k=1)
+            mask = np.triu(np.log(np.random.rand(Wn.shape[0], Wn.shape[0])) <= p, k=1)
             Wn = np.where(mask, 1 - Wn, Wn) 
             Wn = np.triu(Wn) + np.triu(Wn, 1).T
         return Wn

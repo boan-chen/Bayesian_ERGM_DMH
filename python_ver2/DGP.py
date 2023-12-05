@@ -23,22 +23,19 @@ class ergm_generating_process:
         X = self.X
         H = self.naive_network()
         W = np.double(H > 0)
-        p_matrix = H + self.beta[2] * W + self.beta[3] * np.inner(W.T, W)
-        
-        for _ in tqdm(range(r)):
-            seq_i = np.random.randint(0, W.shape[0], W.shape[0])
-            for i in seq_i:
-                p = p_matrix[i, :]
-                seq_j = np.random.choice(W.shape[0], size=W.shape[0]-1, replace=False)
-                for j in seq_j:
-                    if i == j:
-                        continue
-                    p = ((-1) ** W[i, j]) * (H[i, j] + self.beta[2] * W[i, j] + self.beta[3] * np.inner(W[:, i], W[:, j]))
-                    if np.log10(np.random.rand()) <= min(0, p):
-                        W[i, j] = 1 - W[i, j]
-                        W[j, i] = W[i, j]
+
+        for rr in range(r):
+            p = H + self.beta[2] * W + self.beta[3] * np.dot(W, W)
+            p = ((-1) ** W) * p
+            # Ensure matrix is symmetric
+            mask = np.triu(
+                np.log(np.random.rand(W.shape[0], W.shape[0])) <= p, k=1
+            )
+            W = np.where(
+                mask, 1 - W, W
+            )  # replace elements in the upper triangle
+            W = np.triu(W) + np.triu(W, 1).T
             
-            p_matrix = H + self.beta[2] * W + self.beta[3] * np.inner(W.T, W)
             self.Wn.append(W.copy())
         return self.Wn
 
@@ -47,7 +44,8 @@ class ergm_generating_process:
 # Set the parameters
 # N = 40
 # sig2 = 0.5
-# X = np.random.randn(N, 1)
+# # X = np.random.randn(N, 1)
+# X = np.ones((N, 1))
 # Z = sig2 * np.random.randn(N, 1)
 
 # #%%
@@ -79,4 +77,4 @@ class ergm_generating_process:
 # plt.xlabel("# of edges")
 # plt.ylabel("Maximum degree")
 # plt.title("Density plot of # of edges and the maximum degree")
-# %%
+# # %%

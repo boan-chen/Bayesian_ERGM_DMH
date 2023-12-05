@@ -33,7 +33,7 @@ class ergm_generating_process:
                 p = ((-1) ** Wn) * p
                 # Ensure matrix is symmetric
                 mask = np.triu(
-                    np.log10(np.random.rand(Wn.shape[0], Wn.shape[0])) <= p, k=1
+                    np.log(np.random.rand(Wn.shape[0], Wn.shape[0])) <= p, k=1
                 )
                 Wn = np.where(
                     mask, 1 - Wn, Wn
