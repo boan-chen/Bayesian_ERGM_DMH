@@ -9,81 +9,79 @@ class ergm_DMH:
         self.Wn = Wn
         self.Xn = Xn
         self.beta0 = beta0
-        self.step = 0.0025
+        self.step = 0.025
         self.acc = 0
         self.beta_load = []
         self.beta = []
         self.beta_load.append(beta0)
-    
+        
     def beta_sampling(self, rr = 1000, burnin = 500):
         print("Burn-in phase for proposing beta...")
-        gate = 1
-        for i in tqdm(range(0,  burnin)):
-            if gate == 1:
-                current_beta = self.beta_load[-1]
-                current_network = self.auxiliary_network(current_beta)
+        current_beta = self.beta0
+        current_network = self.auxiliary_network(current_beta)
+        for i in tqdm(range(0,  burnin)):                
             proposed_beta = self.adaptive_beta(current_beta)
             proposed_network = self.auxiliary_network(proposed_beta)
-            if abs(np.sum(np.sum(proposed_network))) - np.sum(np.sum(self.Wn)) > 60:
-                i = i - 1
-                gate = 0
-                continue
-            else:
-                pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
-                if np.log10(np.random.rand()) <= min(0, pp):
-                    current_beta = proposed_beta
-                    self.beta_load.append(current_beta)
-                    gate = 1
-                else:
-                    gate = 0
+            # if abs(np.sum(np.sum(proposed_network))) - np.sum(np.sum(self.Wn)) > 60:
+            #     continue
+            pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
+            if np.log(np.random.rand()) <= min(0, pp):
+                current_beta = proposed_beta
+                current_network = proposed_network
+                self.beta_load.append(current_beta)
         self.beta.append(self.beta_load[-1])
         
         # Identical to the above, but update beta and acc
         print("Sampling phase for proposing beta...")
-        gate = 1
         acc_rate = 0
+        print_count = 0
         for i in tqdm(range(0, rr)):
-            if i % 100 == 0:
-                print("beta =", self.beta[-1])
-                print("acc_rate =", acc_rate)
-            if gate == 1:
-                current_beta = self.beta_load[-1]
-                current_network = self.auxiliary_network(current_beta)
             proposed_beta = self.adaptive_beta(current_beta)
             proposed_network = self.auxiliary_network(proposed_beta)
+            if i % 100 == 0:
+                print_count += 1
+                print("beta =", self.beta[-1])
+                print("acc_rate =", acc_rate)
             if abs(np.sum(np.sum(proposed_network))) - np.sum(np.sum(self.Wn)) > 60:
-                i = i - 1
-                gate = 0
                 continue
-            else:
-                pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
-                if np.log(np.random.rand()) <= min(0, pp):
-                    self.beta_load.append(proposed_beta)
-                    self.beta.append(proposed_beta)
-                    gate = 1
-                    self.acc += 1
-                    acc_rate = self.acc / (i + 1)
-                    if acc_rate < 0.1:
-                        self.step = self.step * 0.95
-                    elif acc_rate > 0.4:
-                        self.step = self.step * 1.05
-                else:
-                    gate = 0
-
+            pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
+            if np.log(np.random.rand()) <= min(0, pp):
+                current_beta = proposed_beta
+                current_network = proposed_network
+                self.beta_load.append(current_beta.copy())
+                self.beta.append(proposed_beta.copy())
+                self.acc += 1
+                acc_rate = self.acc / (i + 1)
+                if acc_rate < 0.1:
+                    self.step = self.step * 0.95
+                elif acc_rate > 0.4:
+                    self.step = self.step * 1.05
         return self.beta, acc_rate
 
     def auxiliary_network(self, beta, r=500, burnin=0):
         X = self.Xn
-        H = beta[0] + beta[1] * (X - X.T) 
-        Wn = np.double(H > 0)
-        for _ in range(0, r + burnin):
-            p = H + beta[2] * Wn + beta[3] * np.inner(Wn.T, Wn)
-            p = ((-1) ** Wn) * p
-            mask = np.triu(np.log10(np.random.rand(Wn.shape[0], Wn.shape[0])) <= p, k=1)
-            Wn = np.where(mask, 1 - Wn, Wn) 
-            Wn = np.triu(Wn) + np.triu(Wn, 1).T
-        return Wn
+        H = beta[0] + beta[1] * (X - X.T)
+        W = np.double(H > 0)
+        p_matrix = H + beta[2] * W + beta[3] * np.inner(W.T, W)
         
+        for _ in range(r):
+            seq_i = np.random.randint(0, W.shape[0], W.shape[0])
+            for i in seq_i:
+                p = p_matrix[i, :]
+                seq_j = np.random.choice(W.shape[0], size=W.shape[0]-1, replace=False)
+                for j in seq_j:
+                    if i == j:
+                        continue
+                    p = ((-1) ** W[i, j]) * (H[i, j] + beta[2] * W[i, j] + beta[3] * np.inner(W[:, i], W[:, j]))
+                    if np.log10(np.random.rand()) <= min(0, p):
+                        W[i, j] = 1 - W[i, j]
+                        W[j, i] = W[i, j]
+            
+            p_matrix = H + beta[2] * W + beta[3] * np.inner(W.T, W)
+        
+        return W
+
+
     def adaptive_beta(self, beta0, burnin=50):
         """
         Calculates the adaptive beta value based on the given parameters.
@@ -125,7 +123,7 @@ class ergm_DMH:
             np.sum(np.inner(W, np.inner(W.T, W))) / 3,
         ]
         dzz = np.array(ZZ1) - np.array(ZZ0)
-        dbeta = np.array(beta1 - beta0).T
+        dbeta = np.array(beta0 - beta1).T
         pp = (np.dot(dzz, dbeta))
         return pp
 
@@ -134,11 +132,14 @@ from DGP import ergm_generating_process
 beta_hat = [-3, 1, 1.0, -1.0]
 sig2 = 0.01
 ltnt = 0
-N = 100
-generator = ergm_generating_process(N, beta_hat, sig2, ltnt)
-Wn, Xn, _ = generator.network_metropolis(1)
-W = Wn[0]
-X = Xn[0]
+N = 40
+sig2 = 0.5
+X = np.random.randn(N, 1)
+Z = sig2 * np.random.randn(N, 1)
+#%%
+generator = ergm_generating_process(N, X, Z, beta_hat, ltnt = ltnt)
+Wn = generator.network_metropolis()
+W = Wn[-1]
 print(f"# of edges: {np.sum(np.sum(W))}")
 print(f"max degree: {np.max(np.sum(W, axis=0))}")
 #%%
