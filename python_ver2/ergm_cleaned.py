@@ -2,31 +2,42 @@
 import numpy as np
 from scipy.stats import multivariate_normal as mvnorm
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import corner
+from mpi4py import MPI
 
 #%%
 class ergm_DMH:
-    def __init__(self, Wn, Xn, beta0):
+    def __init__(self, Wn, Xn):
         self.Wn = Wn
         self.Xn = Xn
-        self.beta0 = beta0
-        self.step = 0.025
+        self.step = 0.05 ** 2
         self.acc = 0
         self.beta_load = []
         self.beta = []
+        self.N = len(Xn)
+        observed_edges = self.calculate_statistics(Wn, Xn)[0]
+        self.naive_prob = np.log(observed_edges / (N * (N - 1) / 2))
+        beta0 = mvnorm.rvs([self.naive_prob, 0, 0, 0], 10 * self.step * np.identity(4))
+        self.beta0 = beta0
         self.beta_load.append(beta0)
-        
-    def beta_sampling(self, rr = 2000, burnin = 500):
+    
+    def beta_sampling(self, rr = 2400, burnin = 800):
+        a1, a2 = 0.75, 0.25
         print("Burn-in phase for proposing beta...")
         current_beta = self.beta0
         current_network = self.auxiliary_network(current_beta)
         for i in tqdm(range(0, burnin)):                
-            proposed_beta = self.adaptive_beta(current_beta)
+            proposed_beta = self.adaptive_beta(current_beta, a1, a2)
             # print(proposed_beta)
             proposed_network = self.auxiliary_network(proposed_beta)
-            # if abs(np.sum(np.sum(proposed_network))) - np.sum(np.sum(self.Wn)) > 60:
-            #     continue
+            current_stats = self.calculate_statistics(current_network, self.Xn)
+            proposing_stats = self.calculate_statistics(proposed_network, self.Xn)
+            if abs(np.log((proposing_stats[0]/current_stats[0]))) > 0.5:
+                current_beta = mvnorm.rvs([self.naive_prob, 0, 0, 0], 1 * np.identity(4))
+                continue
             pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
-            if np.log(np.random.rand()) <= pp:
+            if np.log(np.random.rand()) <= min(0, pp):
                 current_beta = proposed_beta
                 current_network = proposed_network
                 self.beta_load.append(current_beta)
@@ -36,27 +47,37 @@ class ergm_DMH:
         print("Sampling phase for proposing beta...")
         acc_rate = 0
         print_count = 0
+        invalid_counter = 0
         for i in tqdm(range(0, rr)):
-            proposed_beta = self.adaptive_beta(current_beta)
+            proposed_beta = self.adaptive_beta(current_beta, a1, a2)
             proposed_network = self.auxiliary_network(proposed_beta)
             if i % 100 == 0:
                 print_count += 1
                 print("beta =", self.beta[-1])
                 print("acc_rate =", acc_rate)
-            if abs(np.sum(np.sum(proposed_network))) - np.sum(np.sum(self.Wn)) > 30:
+                self.acc = 0
+            proposing_stats = self.calculate_statistics(proposed_network, self.Xn)
+            if invalid_counter > 5:
+                print("Too many invalid proposals. Exiting...")
+                break
+            if abs(np.log((proposing_stats[0]/current_stats[0]))) > 0.5:
+                invalid_counter += 1
+                self.beta_load = self.beta_load[: max(int(len(self.beta_load) - 25), 1)]
+                current_beta = self.beta_load[-1]
                 continue
             pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
-            if np.log(np.random.rand()) <= pp:
+            if np.log(np.random.rand()) <= min(0, pp):
                 current_beta = proposed_beta
                 current_network = proposed_network
                 self.beta_load.append(current_beta.copy())
                 self.beta.append(proposed_beta.copy())
                 self.acc += 1
-                acc_rate = self.acc / (i + 1)
+                acc_rate = self.acc / (100)
                 if acc_rate < 0.1:
-                    self.step = self.step * 0.95
+                    self.step = self.step * 0.99
                 elif acc_rate > 0.4:
-                    self.step = self.step * 1.05
+                    self.step = self.step * 1.01
+            invalid_counter = 0
         return self.beta, acc_rate
 
     def auxiliary_network(self, beta, r=2000, burnin=0):
@@ -76,11 +97,10 @@ class ergm_DMH:
                 mask, 1 - W, W
             )  # replace elements in the upper triangle
             W = np.triu(W) + np.triu(W, 1).T
-            Wn.append(W.copy())
         return W
 
 
-    def adaptive_beta(self, beta0, burnin=500):
+    def adaptive_beta(self, beta0, a1, a2, burnin=50):
         """
         Calculates the adaptive beta value based on the given parameters.
 
@@ -92,14 +112,12 @@ class ergm_DMH:
         - beta1 (array-like): The updated beta value.
         """
         
-        a1 = 1
-        a2 = 0
         beta = self.beta_load
         if len(beta) < burnin:
             beta1 = mvnorm.rvs(beta0, self.step * np.identity(len(beta0)))
         else:
-            cov_beta = np.cov(np.array(beta[-500:]).T)
-            scaling_factor = 2.38 ** 2 / 500
+            cov_beta = np.cov(np.array(beta).T)
+            scaling_factor = 2.38 ** 2 / len(beta)
             beta1 = (
                 mvnorm.rvs(beta0, cov_beta * scaling_factor) * a1
                 + mvnorm.rvs(beta0, self.step * np.identity(len(beta0))) * a2
@@ -129,46 +147,61 @@ class ergm_DMH:
 
 #%%
 from DGP import ergm_generating_process
-beta_hat = [-2.5, 1.5, 1.5, -2.0]
+N = 40
+# beta_hat = [-4, -2.5, 3.5, 1.5]
+# X = np.ones(N)
+# X[:20] = 0
 sig2 = 0.01
 ltnt = 0
-N = 40
 sig2 = 0.5
+beta_hat = [-2.5, 2, -3, -2]
+X = np.ones(N)
 # X = np.random.randn(N, 1)
-X = np.ones((N, 1))
+
 Z = sig2 * np.random.randn(N, 1)
-#%%
 generator = ergm_generating_process(N, X, Z, beta_hat, ltnt = ltnt)
 Wn = generator.network_metropolis()
 W = Wn[-1]
 print(f"# of edges: {np.sum(np.sum(W))}")
 print(f"max degree: {np.max(np.sum(W, axis=0))}")
 #%%
-beta0 = np.array([-3, 3, 3, 0])
-estimator = ergm_DMH(W, X, beta0)
-beta, acc_rate = estimator.beta_sampling()
-# %%
+beta_list = []
+chains = 4
+chain = 0
+for i in range(0, 6):
+    print(f"Running {chain+1}th chain...")
+    estimator = ergm_DMH(W, X)
+    beta, acc_rate = estimator.beta_sampling()
+    if len(beta) < 120:
+        print("Not enough samples")
+        continue
+    beta_list.append(beta[:int(len(beta)*0.85)])
+    chain += 1
+    if chain == chains:
+        break
 
-#%% cleaning
-cleaned_beta = []
-for i in tqdm(range(0, len(estimator.beta[-500:]))):
-    beta_test = estimator.beta[-i]
-    W_test = estimator.auxiliary_network(beta_test)
-    num_edge = np.sum(np.sum(W_test))
-    maximum_degree = np.max(np.sum(W_test, axis=0))
-    if num_edge == 0:
-        continue
-    if maximum_degree == 0:
-        continue
-    cleaned_beta.append(beta_test)
+
 # %%
-beta_test = estimator.beta[-10]
-W_test = estimator.auxiliary_network(beta_test)
-print(f"# of edges: {np.sum(np.sum(W_test))}")
-print(f"max degree: {np.max(np.sum(W_test, axis=0))}")
-# %%
-import matplotlib.pyplot as plt
-cleaned_beta = np.array(cleaned_beta)
-plt.hist(beta[:, 1], bins = 100, range = (-5, 5))
+beta_mixed = beta_list[0]
+for i in range(1, len(beta_list)):
+    beta_mixed = np.concatenate((beta_mixed, beta_list[i]))
+beta_mixed = np.array(beta_mixed)
+cov_mixed = np.cov(np.array(beta_mixed).T)
+def trace_plot(beta):
+    plt.figure(figsize=(10, 7))
+    for i in range(0, 4):
+        plt.subplot(2, 2, i+1)
+        plt.plot(beta[:, i])
+        plt.title(f"beta{i}")
+    plt.savefig("trace_plot_1206_2.png")
+    plt.plot()
+    result = corner.corner(beta, labels=["beta0", "beta1", "beta2", "beta3"], truths=beta_hat)
+    plt.savefig("corner_plot_1206_2.png")
+    return result
+# for i in range(0, len(beta_list)):
+#     beta = np.array(beta_list[i])
+#     trace_plot(beta)
+
+triang = trace_plot(beta_mixed)
 
 # %%
