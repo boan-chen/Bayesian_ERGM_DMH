@@ -1,43 +1,39 @@
 # %%
 import numpy as np
 from tqdm import tqdm
+import random
 
 # %%
 class ergm_generating_process:
-    def __init__(self, N, X, Z, beta, ltnt):
+    def __init__(self, N, beta):
         self.beta = beta
-        self.ltnt = ltnt
         self.N = N
         self.Wn = []
-        self.X = X
-        self.Z = Z
 
-    def naive_network(self):
-        X = self.X
-        Z = self.Z
-        # X = np.exp(X)  # If X should be lognormal
-        H = self.beta[0] + self.beta[1] * (X - X.T) + self.ltnt * (Z + Z.T)
-        return H
-
-    def network_metropolis(self, r=1000):
-        X = self.X
-        H = self.naive_network()
+    def network_metropolis(self, r=3000):
+        H = np.ones((self.N, self.N)) * self.beta[0]
         W = np.double(H > 0)
-
+        np.fill_diagonal(W, 0)
+        
         for rr in range(r):
-            p = H + self.beta[2] * W + self.beta[3] * np.dot(W, W)
-            p = ((-1) ** W) * p
+            link = H + self.beta[1] * W + self.beta[2] * np.dot(W, W)
+            log_p = link - np.log(1 + np.exp(link))
+            p = ((-1) ** W) * log_p
             # Ensure matrix is symmetric
             mask = np.triu(
                 np.log(np.random.rand(W.shape[0], W.shape[0])) <= p, k=1
             )
-            W = np.where(
-                mask, 1 - W, W
+            k = random.randint(0, W.shape[0] - 1)
+            W[k] = np.where(
+                mask[k], 1 - W[k], W[k]
             )  # replace elements in the upper triangle
             W = np.triu(W) + np.triu(W, 1).T
+            np.fill_diagonal(W, 0)
             
             self.Wn.append(W.copy())
+        # print(log_p)
         return self.Wn
+
 
 
 #%% test the convergence of the generated networks
@@ -45,18 +41,18 @@ class ergm_generating_process:
 # N = 40
 # sig2 = 0.5
 # # X = np.random.randn(N, 1)
-# X = np.ones((N, 1))
+# X = np.ones(N)
+# # X[: int(N / 2)] = 0
 # Z = sig2 * np.random.randn(N, 1)
 
 # #%%
 # # DGP parameters
-# beta = [-3, 1, 1.0, -1.0]
+# beta = [-2, 0.07, 0.2, 3]
 # ltnt = 0
 
 # network_generator = ergm_generating_process(N, X, Z, beta, ltnt)
 # Wn = network_generator.network_metropolis() 
 
-# #%%
 # W_temp = Wn[500:]
 # edges = []
 # maximum_degree = []
@@ -77,4 +73,6 @@ class ergm_generating_process:
 # plt.xlabel("# of edges")
 # plt.ylabel("Maximum degree")
 # plt.title("Density plot of # of edges and the maximum degree")
-# # %%
+# # # %%
+
+# %%

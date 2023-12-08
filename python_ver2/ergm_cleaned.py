@@ -4,26 +4,26 @@ from scipy.stats import multivariate_normal as mvnorm
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import corner
-from mpi4py import MPI
-
+import random
+from DGP import ergm_generating_process
+import seaborn as sns
 #%%
 class ergm_DMH:
-    def __init__(self, Wn, Xn):
+    def __init__(self, Wn):
         self.Wn = Wn
-        self.Xn = Xn
-        self.step = 0.05 ** 2
+        self.step = 0.01 ** 2
         self.acc = 0
         self.beta_load = []
         self.beta = []
-        self.N = len(Xn)
-        observed_edges = self.calculate_statistics(Wn, Xn)[0]
-        self.naive_prob = np.log(observed_edges / (N * (N - 1) / 2))
-        beta0 = mvnorm.rvs([self.naive_prob, 0, 0, 0], 10 * self.step * np.identity(4))
+        self.N = len(Wn[0])
+        observed_edges = self.calculate_statistics(Wn)[0]
+        self.naive_prob = np.log(observed_edges / (N * (N - 1)/2))
+        beta0 = mvnorm.rvs([self.naive_prob, 0, 0], 10 * self.step * np.identity(3))
         self.beta0 = beta0
         self.beta_load.append(beta0)
     
     def beta_sampling(self, rr = 2400, burnin = 800):
-        a1, a2 = 0.75, 0.25
+        a1, a2 = 0.8, 0.2
         print("Burn-in phase for proposing beta...")
         current_beta = self.beta0
         current_network = self.auxiliary_network(current_beta)
@@ -31,10 +31,10 @@ class ergm_DMH:
             proposed_beta = self.adaptive_beta(current_beta, a1, a2)
             # print(proposed_beta)
             proposed_network = self.auxiliary_network(proposed_beta)
-            current_stats = self.calculate_statistics(current_network, self.Xn)
-            proposing_stats = self.calculate_statistics(proposed_network, self.Xn)
+            current_stats = self.calculate_statistics(current_network)
+            proposing_stats = self.calculate_statistics(proposed_network)
             if abs(np.log((proposing_stats[0]/current_stats[0]))) > 0.5:
-                current_beta = mvnorm.rvs([self.naive_prob, 0, 0, 0], 1 * np.identity(4))
+                current_beta = mvnorm.rvs([self.naive_prob, 0, 0], 1 * np.identity(3))
                 continue
             pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
             if np.log(np.random.rand()) <= min(0, pp):
@@ -56,7 +56,7 @@ class ergm_DMH:
                 print("beta =", self.beta[-1])
                 print("acc_rate =", acc_rate)
                 self.acc = 0
-            proposing_stats = self.calculate_statistics(proposed_network, self.Xn)
+            proposing_stats = self.calculate_statistics(proposed_network)
             if invalid_counter > 5:
                 print("Too many invalid proposals. Exiting...")
                 break
@@ -72,31 +72,33 @@ class ergm_DMH:
                 self.beta_load.append(current_beta.copy())
                 self.beta.append(proposed_beta.copy())
                 self.acc += 1
-                acc_rate = self.acc / (100)
-                if acc_rate < 0.1:
-                    self.step = self.step * 0.99
-                elif acc_rate > 0.4:
-                    self.step = self.step * 1.01
+            acc_rate = self.acc / (100)
+            if acc_rate < 0.1:
+                self.step = self.step * 1.3
+            elif acc_rate > 0.4:
+                self.step = self.step * 0.7
             invalid_counter = 0
         return self.beta, acc_rate
 
-    def auxiliary_network(self, beta, r=2000, burnin=0):
-        X = self.Xn
-        ltnt = 0
-        H = beta[0] + beta[1] * (X - X.T) + ltnt * (Z + Z.T)
+    def auxiliary_network(self, beta, r=2500):
+        H = np.ones((self.N, self.N)) * beta[0] 
         W = np.double(H > 0)
+        np.fill_diagonal(W, 0)
 
-        for rr in range(r):
-            p = H + beta[2] * W + beta[3] * np.dot(W, W)
-            p = ((-1) ** W) * p
+        for _ in range(r):
+            link = H + beta[1] * W + beta[2] * np.dot(W, W)
+            log_p = link - np.log(1 + np.exp(link))
+            p = ((-1) ** W) * log_p
             # Ensure matrix is symmetric
             mask = np.triu(
                 np.log(np.random.rand(W.shape[0], W.shape[0])) <= p, k=1
             )
-            W = np.where(
-                mask, 1 - W, W
+            k = random.randint(0, W.shape[0] - 1)
+            W[k] = np.where(
+                mask[k], 1 - W[k], W[k]
             )  # replace elements in the upper triangle
             W = np.triu(W) + np.triu(W, 1).T
+            np.fill_diagonal(W, 0)
         return W
 
 
@@ -125,53 +127,101 @@ class ergm_DMH:
         return beta1
 
     def likelihood_ratio(self, W, W1, beta0, beta1):
-        X = self.Xn
-        ZZ1 = self.calculate_statistics(W1, X)
-        ZZ0 = self.calculate_statistics(W, X)
+        ZZ1 = self.calculate_statistics(W1)
+        ZZ0 = self.calculate_statistics(W)
         dzz = np.array(ZZ1) - np.array(ZZ0)
-        dbeta = np.array(beta1 - beta0).T
+        dbeta = beta1 - beta0
+        diff = np.dot(ZZ1, beta0.T) + np.dot(ZZ0, beta1.T) - np.dot(ZZ0, beta0.T) - np.dot(ZZ1, beta1.T)
+        # diff = np.dot(dzz, -dbeta.T)
         log_pdf_beta1 = mvnorm.logpdf(beta1, mean=np.zeros(len(beta1)), cov=100*np.eye(len(beta1)))
         log_pdf_beta0 = mvnorm.logpdf(beta0, mean=np.zeros(len(beta0)), cov=100*np.eye(len(beta0)))
-        
-        pp = np.dot(-dzz, dbeta) + log_pdf_beta1 - log_pdf_beta0
+        pp = diff + log_pdf_beta1 - log_pdf_beta0
+        # print(pp)
         return pp
 
-    def calculate_statistics(self, W, X):
-        stats = [
-            np.sum(W),
-            np.sum(np.inner(W, (X - X.T))),
-            np.sum(np.inner(W.T, W)) / 2,
-            np.sum(np.inner(W, np.inner(W.T, W))) / 3,
-        ]
+    def calculate_statistics(self, W):
+        edges = np.sum(np.sum(W)) / 2
+        two_stars = np.sum(np.triu(np.dot(W, W), k = 1))
+        triangles = int(np.trace(np.dot(np.dot(W, W), W)) / 6)
+        stats = [edges, two_stars, triangles]
         return stats
 
-#%%
-from DGP import ergm_generating_process
+def visualize_DGP(Wn):
+    W_temp = Wn[500:]
+    edges = []
+    edges_count = []
+
+    maximum_degree = []
+    for i in range(0, len(W_temp)):
+        edges.append(np.sum(np.sum(W_temp[i])/2))
+        maximum_degree.append(max(np.sum(W_temp[i], axis=0)))
+        for j in range(0, len(W_temp[i])):
+            edges_count.append(np.sum(W_temp[i][j]))
+    plt.figure(figsize=(10, 7))
+    plt.hist(edges_count, color = "skyblue")
+    plt.title("Degree Distribution")
+    plt.plot()
+    # plt.hist(edges)
+    # show the density plot
+    plt.figure(figsize=(10, 7))
+    sns.kdeplot(x = edges, y = maximum_degree, cmap="Blues", fill=True, thresh=0.05)
+    plt.xlabel("# of edges")
+    plt.ylabel("Maximum degree")
+    plt.title("Density plot of # of edges and the maximum degree")
+    plt.plot()
+    return edges, maximum_degree
+
+def trace_plot(beta_list, beta_hat, name):
+    plt.figure(figsize=(10, 7))
+    for i in range(0, len(beta_hat)):
+        plt.subplot(2, 2, i+1)
+        for j in range(0, len(beta_list)):
+            beta = np.array(beta_list[j])
+            plt.plot(beta[:, i], label = f"chain{j}")
+            plt.legend()
+            plt.title(f"beta{i}")
+    plt.savefig(f"trace_plot_{name}.png")
+    plt.plot()
+    beta_mixed = beta_list[0]
+    for i in range(1, len(beta_list)):
+        beta_mixed = np.concatenate((beta_mixed, beta_list[i]))
+    beta_mixed = np.array(beta_mixed)
+    result = corner.corner(beta, labels=["beta0", "beta1", "beta2", "beta3"], truths=beta_hat)
+    plt.savefig(f"corner_plot_{name}.png")
+    return 
+    
+#%% define parameters
 N = 40
-# beta_hat = [-4, -2.5, 3.5, 1.5]
 # X = np.ones(N)
 # X[:20] = 0
 sig2 = 0.01
 ltnt = 0
-sig2 = 0.5
-beta_hat = [-2.5, 2, -3, -2]
-X = np.ones(N)
-# X = np.random.randn(N, 1)
-
+beta_hat = [-2, -1, -2]
+X = np.ones((N, 1))
+X[: int(N / 2)] = 0
 Z = sig2 * np.random.randn(N, 1)
-generator = ergm_generating_process(N, X, Z, beta_hat, ltnt = ltnt)
-Wn = generator.network_metropolis()
+generator = ergm_generating_process(N, beta_hat)
+Wn = generator.network_metropolis(r = 2500)
 W = Wn[-1]
-print(f"# of edges: {np.sum(np.sum(W))}")
+print(f"# of edges: {np.sum(np.sum(W))/2}")
+print(f"number of two stars: {np.sum(np.triu(np.dot(W, W), k = 1))}")
+print(f"number of triangles: {int(np.trace(np.dot(np.dot(W, W), W))/6)}")
 print(f"max degree: {np.max(np.sum(W, axis=0))}")
-#%%
+visualize_DGP(Wn)
+
+import networkx as nx
+G = nx.from_numpy_array(W)
+plt.figure(figsize=(7, 7))
+nx.draw(G, with_labels=False, node_size=20, node_color="skyblue", edge_color="grey")
+plt.plot()
+#%% estimate beta
 beta_list = []
 chains = 4
 chain = 0
 for i in range(0, 6):
     print(f"Running {chain+1}th chain...")
-    estimator = ergm_DMH(W, X)
-    beta, acc_rate = estimator.beta_sampling()
+    estimator = ergm_DMH(W)
+    beta, acc_rate = estimator.beta_sampling(rr = 1200, burnin = 300)
     if len(beta) < 120:
         print("Not enough samples")
         continue
@@ -180,28 +230,7 @@ for i in range(0, 6):
     if chain == chains:
         break
 
-
-# %%
-beta_mixed = beta_list[0]
-for i in range(1, len(beta_list)):
-    beta_mixed = np.concatenate((beta_mixed, beta_list[i]))
-beta_mixed = np.array(beta_mixed)
-cov_mixed = np.cov(np.array(beta_mixed).T)
-def trace_plot(beta):
-    plt.figure(figsize=(10, 7))
-    for i in range(0, 4):
-        plt.subplot(2, 2, i+1)
-        plt.plot(beta[:, i])
-        plt.title(f"beta{i}")
-    plt.savefig("trace_plot_1206_2.png")
-    plt.plot()
-    result = corner.corner(beta, labels=["beta0", "beta1", "beta2", "beta3"], truths=beta_hat)
-    plt.savefig("corner_plot_1206_2.png")
-    return result
-# for i in range(0, len(beta_list)):
-#     beta = np.array(beta_list[i])
-#     trace_plot(beta)
-
-triang = trace_plot(beta_mixed)
+#%% Visualize DGP
+triang = trace_plot(beta_list, beta_hat, "1208_3")
 
 # %%
