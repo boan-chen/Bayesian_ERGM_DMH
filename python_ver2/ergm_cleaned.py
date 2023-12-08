@@ -22,71 +22,71 @@ class ergm_DMH:
         self.beta0 = beta0
         self.beta_load.append(beta0)
     
-    def beta_sampling(self, rr = 2400, burnin = 800):
-        a1, a2 = 0.8, 0.2
-        print("Burn-in phase for proposing beta...")
-        current_beta = self.beta0
-        current_network = self.auxiliary_network(current_beta)
-        for i in tqdm(range(0, burnin)):                
-            proposed_beta = self.adaptive_beta(current_beta, a1, a2)
-            # print(proposed_beta)
-            proposed_network = self.auxiliary_network(proposed_beta)
-            current_stats = self.calculate_statistics(current_network)
-            proposing_stats = self.calculate_statistics(proposed_network)
-            if abs(np.log((proposing_stats[0]/current_stats[0]))) > 0.5:
-                current_beta = mvnorm.rvs([self.naive_prob, 0, 0], 1 * np.identity(3))
-                continue
-            pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
-            if np.log(np.random.rand()) <= min(0, pp):
-                current_beta = proposed_beta
-                current_network = proposed_network
-                self.beta_load.append(current_beta)
-        self.beta.append(self.beta_load[-1])
-        
-        # Identical to the above, but update beta and acc
-        print("Sampling phase for proposing beta...")
-        acc_rate = 0
-        print_count = 0
+    def beta_updating(self, phase, iter):
         invalid_counter = 0
-        for i in tqdm(range(0, rr)):
-            proposed_beta = self.adaptive_beta(current_beta, a1, a2)
-            proposed_network = self.auxiliary_network(proposed_beta)
-            if i % 100 == 0:
-                print_count += 1
-                print("beta =", self.beta[-1])
-                print("acc_rate =", acc_rate)
-                self.acc = 0
-            proposing_stats = self.calculate_statistics(proposed_network)
+        a1, a2 = 0.6, 0.4
+        if phase == 'burnin':
+            current_beta = self.beta0
+            current_network = self.auxiliary_network(current_beta)
+        acc_rate = 0
+        if phase == 'sampling':
+            current_beta = self.beta_load[-1]
+            current_network = self.auxiliary_network(current_beta)
+        for i in tqdm(range(0, iter)):  
             if invalid_counter > 5:
                 print("Too many invalid proposals. Exiting...")
                 break
-            if abs(np.log((proposing_stats[0]/current_stats[0]))) > 0.5:
-                invalid_counter += 1
-                self.beta_load = self.beta_load[: max(int(len(self.beta_load) - 25), 1)]
-                current_beta = self.beta_load[-1]
-                continue
+            if i % 100 == 0:
+                acc_rate = self.acc / (100)
+                self.acc = 0  
+                if acc_rate < 0.1:
+                    self.step = self.step * 1.4
+                    a1 = min(a1 * 0.6, 1)
+                    a2 = 1 - a1
+                elif acc_rate > 0.4:
+                    self.step = self.step * 1.4
+                    a1 = min(a1 * 0.6, 1)
+                    a2 = 1 - a1
+                if i != 0:
+                    print("beta =", self.beta_load[-1])
+                    print("acc_rate =", acc_rate)
+            proposed_beta = self.adaptive_beta(current_beta, a1, a2)
+            proposed_network = self.auxiliary_network(proposed_beta)
+            current_stats = self.calculate_statistics(current_network)
+            proposing_stats = self.calculate_statistics(proposed_network)
+            if (abs(np.log((proposing_stats[0]/current_stats[0]))) > 0.5):
+                if phase == 'burnin':
+                    current_beta = mvnorm.rvs([self.naive_prob, 0, 0], 1 * np.identity(3))
+                    continue
+                if phase == 'sampling':
+                    invalid_counter += 1
+                    self.beta_load = self.beta_load[: max(int(len(self.beta_load) - 25), 1)]
+                    current_beta = self.beta_load[-1]
+                    continue
+
             pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
             if np.log(np.random.rand()) <= min(0, pp):
+                self.acc += 1
                 current_beta = proposed_beta
                 current_network = proposed_network
-                self.beta_load.append(current_beta.copy())
-                self.beta.append(proposed_beta.copy())
-                self.acc += 1
-            acc_rate = self.acc / (100)
-            if acc_rate < 0.1:
-                self.step = self.step * 1.3
-            elif acc_rate > 0.4:
-                self.step = self.step * 0.7
-            invalid_counter = 0
-        return self.beta, acc_rate
+                self.beta_load.append(current_beta)
+                if phase == 'sampling':
+                    self.beta.append(proposed_beta)
+        self.beta.append(self.beta_load[-1])
+        if phase == 'burnin':
+            print("Burn-in phase finished. Starting sampling phase...")
+        if phase == 'sampling':
+            print("Sampling phase finished.")
+            return self.beta, acc_rate
+
 
     def auxiliary_network(self, beta, r=2500):
         H = np.ones((self.N, self.N)) * beta[0] 
         W = np.double(H > 0)
-        np.fill_diagonal(W, 0)
 
         for _ in range(r):
             link = H + beta[1] * W + beta[2] * np.dot(W, W)
+            np.fill_diagonal(link, 0)
             log_p = link - np.log(1 + np.exp(link))
             p = ((-1) ** W) * log_p
             # Ensure matrix is symmetric
@@ -145,6 +145,11 @@ class ergm_DMH:
         triangles = int(np.trace(np.dot(np.dot(W, W), W)) / 6)
         stats = [edges, two_stars, triangles]
         return stats
+    
+    def beta_sampling(self, rr = 2400, burnin = 800):
+        self.beta_updating('burnin', burnin)
+        self.beta_updating('sampling', rr)
+        return self.beta
 
 def visualize_DGP(Wn):
     W_temp = Wn[500:]
@@ -196,7 +201,7 @@ N = 40
 # X[:20] = 0
 sig2 = 0.01
 ltnt = 0
-beta_hat = [-2, -1, -2]
+beta_hat = [-3, 1, 1]
 X = np.ones((N, 1))
 X[: int(N / 2)] = 0
 Z = sig2 * np.random.randn(N, 1)
@@ -221,8 +226,8 @@ chain = 0
 for i in range(0, 6):
     print(f"Running {chain+1}th chain...")
     estimator = ergm_DMH(W)
-    beta, acc_rate = estimator.beta_sampling(rr = 1200, burnin = 300)
-    if len(beta) < 120:
+    beta = estimator.beta_sampling(rr = 1200, burnin = 300)
+    if len(beta) < 400:
         print("Not enough samples")
         continue
     beta_list.append(beta[:int(len(beta)*0.85)])

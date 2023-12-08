@@ -13,10 +13,10 @@ class ergm_generating_process:
     def network_metropolis(self, r=3000):
         H = np.ones((self.N, self.N)) * self.beta[0]
         W = np.double(H > 0)
-        np.fill_diagonal(W, 0)
-        
+
         for rr in range(r):
             link = H + self.beta[1] * W + self.beta[2] * np.dot(W, W)
+            np.fill_diagonal(link, 0)
             log_p = link - np.log(1 + np.exp(link))
             p = ((-1) ** W) * log_p
             # Ensure matrix is symmetric
