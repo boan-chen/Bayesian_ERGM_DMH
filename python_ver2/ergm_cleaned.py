@@ -117,8 +117,8 @@ class ergm_DMH:
             degree = degree.reshape((N, 1))
             degree_two_way = degree + degree.T
             link = beta[0] + beta[1] * degree_two_way[i, j] + beta[2] * np.dot(W[i].T, W[j])
-            log_p = link   
-            # log_p = link - np.log(1 + np.exp(link))
+            # log_p = link   
+            log_p = link - np.log(1 + np.exp(link))
             p = ((-1) ** W[i, j]) * log_p
             if np.log(np.random.rand()) <= min(0, p):
                 W[i, j] = 1 - W[i, j]
@@ -223,7 +223,7 @@ def trace_plot(beta_list, beta_hat, name):
     
 #%% define parameters
 N = 40
-beta_hat = [-3.5, 0.1, 0.5]
+beta_hat = [-3.5, 0.05, 0.5]
 # X = np.ones(N)
 # X[:20] = 0
 # sig2 = 0.01
@@ -253,7 +253,7 @@ chain = 0
 for i in range(0, 6):
     print(f"Running {chain+1}th chain...")
     estimator = ergm_DMH(W)
-    beta = estimator.beta_sampling(rr = 4800, burnin = 1200)
+    beta = estimator.beta_sampling(rr = 8000, burnin = 2000)
     if len(beta) < 500:
         print("Not enough samples")
         continue
