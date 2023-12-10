@@ -106,7 +106,7 @@ class ergm_DMH:
         # if the element of H is larger than the log uniform (0, 1), then the element is 1
         # otherwise, the element is 0
         
-        W = np.where(np.minimum(H, 0) > np.log(np.random.rand(N, N)), 1, 0)
+        W = np.where(H > np.log(np.random.rand(N, N)), 1, 0)
         np.fill_diagonal(W, 0)
         for _ in range(r):
             # randomly select i and j
@@ -121,7 +121,7 @@ class ergm_DMH:
             # log_p = link   
             log_p = link - np.log(1 + np.exp(link))
             p = ((-1) ** W[i, j]) * log_p
-            if np.log(np.random.rand()) <= min(0, p):
+            if np.log(np.random.rand()) <= p:
                 W[i, j] = 1 - W[i, j]
                 W[j, i] = W[i, j]
                 Wn.append(W.copy())
