@@ -4,35 +4,33 @@ from tqdm import tqdm
 import random
 
 # %%
-class ergm_generating_process:
-    def __init__(self, N, beta):
-        self.beta = beta
-        self.N = N
-        self.Wn = []
-
-    def network_metropolis(self, r=3000):
-        H = np.ones((self.N, self.N)) * self.beta[0]
-        W = np.double(H > 0)
-
-        for rr in range(r):
-            link = H + self.beta[1] * W + self.beta[2] * np.dot(W, W)
-            np.fill_diagonal(link, 0)
-            log_p = link - np.log(1 + np.exp(link))
-            p = ((-1) ** W) * log_p
-            # Ensure matrix is symmetric
-            mask = np.triu(
-                np.log(np.random.rand(W.shape[0], W.shape[0])) <= p, k=1
-            )
-            k = random.randint(0, W.shape[0] - 1)
-            W[k] = np.where(
-                mask[k], 1 - W[k], W[k]
-            )  # replace elements in the upper triangle
-            W = np.triu(W) + np.triu(W, 1).T
-            np.fill_diagonal(W, 0)
-            
-            self.Wn.append(W.copy())
-        # print(log_p)
-        return self.Wn
+def network_metropolis(N, beta, r):
+    Wn = []
+    H = np.ones((N, N)) * beta[0]
+    # if the element of H is larger than the log uniform (0, 1), then the element is 1
+    # otherwise, the element is 0
+    W = np.where(np.minimum(H, 0) > np.log(np.random.rand(N, N)), 1, 0)
+    np.fill_diagonal(W, 0)
+    for rr in range(r):
+        # randomly select i and j
+        i = random.randint(0, N - 1)
+        j = random.randint(0, N - 1)
+        if i == j:
+            continue
+        degree = np.sum(W, axis=0)
+        degree = degree.reshape((N, 1))
+        degree_two_way = degree + degree.T
+        link = beta[0] + beta[1] * degree_two_way[i, j] + beta[2] * np.dot(W[i].T, W[j])
+        log_p = link   
+        # log_p = link - np.log(1 + np.exp(link))
+        p = ((-1) ** W[i, j]) * log_p
+        if np.log(np.random.rand()) <= min(0, p):
+            W[i, j] = 1 - W[i, j]
+            W[j, i] = W[i, j]
+            Wn.append(W.copy())
+    print(f"acceptance rate: {len(Wn) / r}")
+    # print(log_p)
+    return Wn
 
 
 
@@ -47,29 +45,38 @@ class ergm_generating_process:
 
 # #%%
 # # DGP parameters
-# beta = [-2, 0.07, 0.2, 3]
+# beta = [-3.5, 0.1, 0.5]
 # ltnt = 0
 
-# network_generator = ergm_generating_process(N, X, Z, beta, ltnt)
-# Wn = network_generator.network_metropolis() 
+# Wn = network_metropolis(N, beta, r=12000) 
 
-# W_temp = Wn[500:]
+# W_temp = Wn[100:]
 # edges = []
 # maximum_degree = []
+# degree = []
 # for i in range(0, len(W_temp)):
 #     edges.append(np.sum(np.sum(W_temp[i])))
 #     maximum_degree.append(max(np.sum(W_temp[i], axis=0)))
+#     for j in range(0, len(W_temp[i])):
+#         degree.append(np.sum(W_temp[i][j]))
 
+# #%%
+# import networkx as nx
+# adjacency_matrix = Wn[-10]
+# G = nx.from_numpy_array(adjacency_matrix)
+# nx.draw(G, with_labels=False, node_size=20, node_color="skyblue", edge_color="grey")
+
+# #%%
 # import matplotlib.pyplot as plt
-# # plot the distribution of the number of edges
+# # plot the distribution of the number of degree
 # plt.figure(figsize=(10, 7))
-# edges = np.array(edges)
-# plt.hist(edges)
-# plt.title("Distribution of the number of edges")
+# plt.hist(degree)
+# plt.title("Distribution of the number of degrees")
 # # show the density plot
+# edges = np.array(edges)
 # import seaborn as sns
 # plt.figure(figsize=(10, 7))
-# sns.kdeplot(x = edges, y = maximum_degree, cmap="Blues", shade=True, shade_lowest=False)
+# sns.kdeplot(x = edges, y = maximum_degree, cmap="Blues", fill = True, thresh=0.05, cbar=True)
 # plt.xlabel("# of edges")
 # plt.ylabel("Maximum degree")
 # plt.title("Density plot of # of edges and the maximum degree")
