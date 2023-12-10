@@ -156,10 +156,10 @@ class ergm_DMH:
     def likelihood_ratio(self, W, W1, beta0, beta1):
         ZZ1 = self.calculate_statistics(W1)
         ZZ0 = self.calculate_statistics(W)
-        dzz = np.array(ZZ1) - np.array(ZZ0)
-        dbeta = beta1 - beta0
-        # diff = np.dot(ZZ1, beta0.T) + np.dot(ZZ0, beta1.T) - np.dot(ZZ0, beta0.T) - np.dot(ZZ1, beta1.T)
-        diff = np.dot(dzz, -dbeta.T)
+        # dzz = np.array(ZZ1) - np.array(ZZ0)
+        # dbeta = beta1 - beta0
+        diff = np.dot(ZZ1, beta0.T) + np.dot(ZZ0, beta1.T) - np.dot(ZZ0, beta0.T) - np.dot(ZZ1, beta1.T)
+        # diff = np.dot(dzz, -dbeta.T)
         log_pdf_beta1 = mvnorm.logpdf(beta1, mean=np.zeros(len(beta1)), cov=100*np.eye(len(beta1)))
         log_pdf_beta0 = mvnorm.logpdf(beta0, mean=np.zeros(len(beta0)), cov=100*np.eye(len(beta0)))
         pp = diff + log_pdf_beta1 - log_pdf_beta0
