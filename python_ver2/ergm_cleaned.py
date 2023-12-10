@@ -12,7 +12,7 @@ from DGP import network_metropolis
 class ergm_DMH:
     def __init__(self, Wn):
         self.Wn = Wn
-        self.step = 0.03 ** 2
+        self.step = 0.3
         self.acc = 0
         self.beta_load = []
         self.beta = []
@@ -20,7 +20,7 @@ class ergm_DMH:
         self.parascales = np.array([1, 1/self.N, 1/np.sqrt(self.N)])
         observed_edges = self.calculate_statistics(Wn)[0]
         self.naive_prob = np.log(observed_edges / (N * (N - 1)))
-        beta0 = mvnorm.rvs([self.naive_prob, 0, 0], 10 * self.step * np.identity(3))
+        beta0 = mvnorm.rvs([self.naive_prob, 0, 0], 10 * self.step * np.diag(self.parascales))
         self.beta0 = beta0
         self.beta_load.append(beta0)
     
@@ -32,36 +32,38 @@ class ergm_DMH:
             a1 = min(a1 * 0.6, 1)
             a2 = 1 - a1
         elif acc_rate < 0.3:
-            self.step = self.step * 0.6
-            a1 = min(a1 * 1.4, 1)
+            self.step = self.step * 2
+            a1 = min(a1 * 0.5, 1)
             a2 = 1 - a1
         if i != 0:
             print("beta =", self.beta_load[-1])
             print("acc_rate =", acc_rate)
-        return a1, a2
+        return a1, a2, acc_rate
     
     def beta_updating(self, phase, iter, a1 = 0.2, a2 = 0.8):
         invalid_counter = 0
         if phase == 'burnin':
             current_beta = self.beta0
-            for _ in range(0, 100):
-                current_network, network_acc_rate = self.auxiliary_network(current_beta)
-                if network_acc_rate > 0.02:
-                    break
-        acc_rate = 0
+            current_network, network_acc_rate = self.auxiliary_network(current_beta)
+            if network_acc_rate < 0.02:
+                current_beta = self.beta0
+                
         if phase == 'sampling':
             current_beta = self.beta_load[-1]
-            for _ in range(0, 100):
-                current_network, network_acc_rate = self.auxiliary_network(current_beta)
-                if network_acc_rate > 0.02:
-                    break
+            current_network, network_acc_rate = self.auxiliary_network(current_beta)
+            if network_acc_rate > 0.02:
+                current_beta = self.beta_load[-1]
             a1, a2 = self.a1, self.a2
         for i in tqdm(range(0, iter)):  
             # if invalid_counter > 5:
             #     print("Too many invalid proposals. Exiting...")
             #     break
-            if i % 100 == 0:
-                a1, a2 = self.adjust_step_size(a1, a2, i)
+            if i % 100 == 0 and i != 0:
+                a1, a2, acc_rate = self.adjust_step_size(a1, a2, i)
+                if acc_rate == 0:
+                    current_beta = self.beta_load[-(25 + r)]
+                    current_network, network_acc_rate = self.auxiliary_network(current_beta)
+                    continue
             proposed_beta = self.adaptive_beta(current_beta, a1, a2)
             proposed_network, network_acc_rate = self.auxiliary_network(proposed_beta)
             if network_acc_rate < 0.02:
@@ -76,11 +78,10 @@ class ergm_DMH:
                 if phase == 'sampling':
                     invalid_counter += 1
                     # self.beta_load = self.beta_load[: max(int(len(self.beta_load) - 25), 1)]
-                    for r in range(0, 100):
-                        current_beta = self.beta_load[-(25 + r)]
-                        current_network, network_acc_rate = self.auxiliary_network(current_beta)
-                        if network_acc_rate > 0.02:
-                            break
+                    current_beta = self.beta_load[-(25 + r)]
+                    current_network, network_acc_rate = self.auxiliary_network(current_beta)
+                    if network_acc_rate > 0.02:
+                        current_beta = self.beta_load[-1]
                     continue
 
             pp = self.likelihood_ratio(current_network, proposed_network, current_beta, proposed_beta)
@@ -128,7 +129,7 @@ class ergm_DMH:
         return W, acc_rate
 
 
-    def adaptive_beta(self, beta0, a1, a2, burnin=500):
+    def adaptive_beta(self, beta0, a1, a2, burnin=350):
         """
         Calculates the adaptive beta value based on the given parameters.
 
@@ -141,14 +142,14 @@ class ergm_DMH:
         """
         
         beta = self.beta_load
-        if len(beta) < burnin:
-            beta1 = mvnorm.rvs(beta0, np.diag(self.parascales))
+        if len(beta) < burnin * 2:
+            beta1 = mvnorm.rvs(beta0, self.step * np.diag(self.parascales))
         else:
-            cov_beta = np.cov(np.array(beta).T)
+            cov_beta = np.cov(np.array(beta[burnin:]).T)
             scaling_factor = 2.38 ** 2 / len(beta)
             beta1 = (
                 mvnorm.rvs(beta0, cov_beta * scaling_factor) * a1
-                + mvnorm.rvs(beta0, np.diag(self.parascales)) * a2
+                + mvnorm.rvs(beta0, self.step * np.diag(self.parascales)) * a2
             )
         return beta1
 
@@ -157,8 +158,8 @@ class ergm_DMH:
         ZZ0 = self.calculate_statistics(W)
         dzz = np.array(ZZ1) - np.array(ZZ0)
         dbeta = beta1 - beta0
-        diff = np.dot(ZZ1, beta0.T) + np.dot(ZZ0, beta1.T) - np.dot(ZZ0, beta0.T) - np.dot(ZZ1, beta1.T)
-        # diff = np.dot(dzz, -dbeta.T)
+        # diff = np.dot(ZZ1, beta0.T) + np.dot(ZZ0, beta1.T) - np.dot(ZZ0, beta0.T) - np.dot(ZZ1, beta1.T)
+        diff = np.dot(dzz, -dbeta.T)
         log_pdf_beta1 = mvnorm.logpdf(beta1, mean=np.zeros(len(beta1)), cov=100*np.eye(len(beta1)))
         log_pdf_beta0 = mvnorm.logpdf(beta0, mean=np.zeros(len(beta0)), cov=100*np.eye(len(beta0)))
         pp = diff + log_pdf_beta1 - log_pdf_beta0
@@ -223,7 +224,7 @@ def trace_plot(beta_list, beta_hat, name):
     
 #%% define parameters
 N = 40
-beta_hat = [-3.5, 0.05, 0.5]
+beta_hat = [-3, 0.01, 0.5]
 # X = np.ones(N)
 # X[:20] = 0
 # sig2 = 0.01
@@ -250,13 +251,13 @@ plt.plot()
 beta_list = []
 chains = 1
 chain = 0
-for i in range(0, 6):
+for i in range(0, 1):
     print(f"Running {chain+1}th chain...")
     estimator = ergm_DMH(W)
-    beta = estimator.beta_sampling(rr = 8000, burnin = 2000)
-    if len(beta) < 500:
-        print("Not enough samples")
-        continue
+    beta = estimator.beta_sampling(rr = 4800, burnin = 1200)
+    # if len(beta) < 500:
+    #     print("Not enough samples")
+    #     continue
     beta_list.append(beta[:int(len(beta)*0.85)])
     chain += 1
     if chain == chains:
