@@ -27,14 +27,14 @@ class ergm_DMH:
     def adjust_step_size(self, a1, a2, i):
         acc_rate = self.acc / (100)
         self.acc = 0  
-        # if acc_rate > 0.7:
-        #     self.step = self.step * 1.4
-        #     a1 = min(a1 * 0.6, 1)
-        #     a2 = 1 - a1
-        # elif acc_rate < 0.3:
-        #     self.step = self.step * 2
-        #     a1 = min(a1 * 0.5, 1)
-        #     a2 = 1 - a1
+        if acc_rate > 0.7:
+            self.step = self.step * 1.4
+            a1 = min(a1 * 0.6, 1)
+            a2 = 1 - a1
+        elif acc_rate < 0.3:
+            self.step = self.step * 2
+            a1 = min(a1 * 0.5, 1)
+            a2 = 1 - a1
         if i != 0:
             print("beta =", self.beta_load[-1])
             print("acc_rate =", acc_rate)
@@ -61,7 +61,7 @@ class ergm_DMH:
             if i % 100 == 0 and i != 0:
                 a1, a2, acc_rate = self.adjust_step_size(a1, a2, i)
                 if acc_rate == 0:
-                    current_beta = self.beta_load[-(25)]
+                    current_beta = self.beta_load[-(25 + r)]
                     current_network, network_acc_rate = self.auxiliary_network(current_beta)
                     continue
             proposed_beta = self.adaptive_beta(current_beta, a1, a2)
@@ -78,7 +78,7 @@ class ergm_DMH:
                 if phase == 'sampling':
                     invalid_counter += 1
                     # self.beta_load = self.beta_load[: max(int(len(self.beta_load) - 25), 1)]
-                    current_beta = self.beta_load[-(25)]
+                    current_beta = self.beta_load[-(25 + r)]
                     current_network, network_acc_rate = self.auxiliary_network(current_beta)
                     if network_acc_rate > 0.02:
                         current_beta = self.beta_load[-1]
@@ -122,7 +122,7 @@ class ergm_DMH:
             # log_p = link   
             log_p = link - np.log(1 + np.exp(link))
             p = ((-1) ** W[i, j]) * log_p
-            if np.log(np.random.rand()) <= min(p, 0):
+            if np.log(np.random.rand()) <= p:
                 W[i, j] = 1 - W[i, j]
                 W[j, i] = W[i, j]
                 Wn.append(W.copy())
@@ -204,7 +204,7 @@ def visualize_DGP(Wn):
     plt.plot()
     return edges, maximum_degree
 
-def trace_plot(beta_list, beta_hat, save = True, name = None):
+def trace_plot(beta_list, beta_hat, name):
     plt.figure(figsize=(10, 7))
     for i in range(0, len(beta_hat)):
         plt.subplot(2, 2, i+1)
@@ -213,22 +213,19 @@ def trace_plot(beta_list, beta_hat, save = True, name = None):
             plt.plot(beta[:, i], label = f"chain{j+1}")
             plt.legend()
             plt.title(f"beta{i}")
-    if save == True:
-        plt.savefig(f"trace_plot_{name}.png")
+    plt.savefig(f"trace_plot_{name}.png")
     plt.plot()
     beta_mixed = beta_list[0]
     for i in range(1, len(beta_list)):
         beta_mixed = np.concatenate((beta_mixed, beta_list[i]))
     beta_mixed = np.array(beta_mixed)
     result = corner.corner(beta, labels=["beta0", "beta1", "beta2", "beta3"], truths=beta_hat)
-    if save == True:
-        plt.savefig(f"corner_plot_{name}.png")
-    plt.plot()
+    plt.savefig(f"corner_plot_{name}.png")
     return 
     
 #%% define parameters
 N = 40
-beta_hat = [-3.5, 0.1, 0.5]
+beta_hat = [-3.5, 0.05, 0.5]
 # X = np.ones(N)
 # X[:20] = 0
 # sig2 = 0.01
@@ -245,26 +242,19 @@ print(f"max degree: {np.max(np.sum(W, axis=0))}")
 visualize_DGP(Wn)
 json_serializable_list = [arr.tolist() for arr in Wn]
 
+
 import networkx as nx
 G = nx.from_numpy_array(W)
 plt.figure(figsize=(7, 7))
 nx.draw(G, with_labels=False, node_size=20, node_color="skyblue", edge_color="grey")
 plt.plot()
-#%% r sample
-import pandas as pd
-df = pd.read_csv('doc_save_test_1.csv')
-matrix = np.array(df)
-g = nx.from_numpy_array(matrix)
-plt.figure(figsize=(7, 7))
-nx.draw(g, with_labels=False, node_size=20, node_color="skyblue", edge_color="grey")
-
 #%% estimate beta
 beta_list = []
 chains = 1
 chain = 0
 for i in range(0, 1):
     print(f"Running {chain+1}th chain...")
-    estimator = ergm_DMH(matrix)
+    estimator = ergm_DMH(W)
     beta = estimator.beta_sampling(rr = 4800, burnin = 1200)
     # if len(beta) < 500:
     #     print("Not enough samples")
@@ -282,8 +272,5 @@ json_serializable_beta = [arr.tolist() for arr in beta_list]
 with open(f'beta_list_{name}.json', 'w') as f:
     json.dump(json_serializable_beta, f)
 triang = trace_plot(beta_list, beta_hat, name)
-
-# %%
-triang = trace_plot(beta_list, beta_hat, save = False, name = None)
 
 # %%
