@@ -8,6 +8,7 @@ import random
 import seaborn as sns
 import json
 from DGP import network_metropolis
+import pandas as pd
 #%%
 class ergm_DMH:
     def __init__(self, Wn):
@@ -19,22 +20,23 @@ class ergm_DMH:
         self.N = len(Wn[0])
         self.parascales = np.array([1, 1/self.N, 1/np.sqrt(self.N)])
         observed_edges = self.calculate_statistics(Wn)[0]
-        self.naive_prob = np.log(observed_edges / (N * (N - 1)))
+        self.naive_prob = np.log(observed_edges / (self.N * (self.N - 1)))
         beta0 = mvnorm.rvs([self.naive_prob, 0, 0], 10 * self.step * np.diag(self.parascales))
         self.beta0 = beta0
         self.beta_load.append(beta0)
+        self.stats = pd.DataFrame(columns = ['edges', 'two_stars', 'triangles'])
     
-    def adjust_step_size(self, a1, a2, i):
+    def adjust_step_size(self, a1, a2, i, adjust = False):
         acc_rate = self.acc / (100)
         self.acc = 0  
-        # if acc_rate > 0.7:
-        #     self.step = self.step * 1.4
-        #     a1 = min(a1 * 0.6, 1)
-        #     a2 = 1 - a1
-        # elif acc_rate < 0.3:
-        #     self.step = self.step * 2
-        #     a1 = min(a1 * 0.5, 1)
-        #     a2 = 1 - a1
+        if acc_rate > 0.7 and adjust == True:
+            self.step = self.step * 1.4
+            a1 = min(a1 * 0.6, 1)
+            a2 = 1 - a1
+        elif acc_rate < 0.3 and adjust == True:
+            self.step = self.step * 2
+            a1 = min(a1 * 0.5, 1)
+            a2 = 1 - a1
         if i != 0:
             print("beta =", self.beta_load[-1])
             print("acc_rate =", acc_rate)
@@ -78,7 +80,7 @@ class ergm_DMH:
                 if phase == 'sampling':
                     invalid_counter += 1
                     # self.beta_load = self.beta_load[: max(int(len(self.beta_load) - 25), 1)]
-                    current_beta = self.beta_load[-(25)]
+                    current_beta = self.beta_load[max(-25, -1)]
                     current_network, network_acc_rate = self.auxiliary_network(current_beta)
                     if network_acc_rate > 0.02:
                         current_beta = self.beta_load[-1]
@@ -92,30 +94,32 @@ class ergm_DMH:
                 self.beta_load.append(current_beta)
                 if phase == 'sampling':
                     self.beta.append(proposed_beta)
+                    self.stats.loc[len(self.stats)] = proposing_stats
         self.beta.append(self.beta_load[-1])
         if phase == 'burnin':
-            self.a1, self.a2 = a1, a2
+            self.a1, self.a2, acc_rate = self.adjust_step_size(a1, a2, i, adjust = False)
             print("Burn-in phase finished. Starting sampling phase...")
         if phase == 'sampling':
+            self.a1, self.a2, acc_rate = self.adjust_step_size(a1, a2, i, adjust = False)
             print("Sampling phase finished.")
             return self.beta, acc_rate
 
     def auxiliary_network(self, beta, r=20000):
         Wn = []
-        H = np.ones((N, N)) * beta[0]
+        H = np.ones((self.N, self.N)) * beta[0]
         # if the element of H is larger than the log uniform (0, 1), then the element is 1
         # otherwise, the element is 0
         
-        W = np.where(H > np.log(np.random.rand(N, N)), 1, 0)
+        W = np.where(H > np.log(np.random.rand(self.N, self.N)), 1, 0)
         np.fill_diagonal(W, 0)
         for _ in range(r):
             # randomly select i and j
-            i = random.randint(0, N - 1)
-            j = random.randint(0, N - 1)
+            i = random.randint(0, self.N - 1)
+            j = random.randint(0, self.N - 1)
             if i == j:
                 continue
             degree = np.sum(W, axis=0)
-            degree = degree.reshape((N, 1))
+            degree = degree.reshape((self.N, 1))
             degree_two_way = degree + degree.T
             potential_triangles = np.dot(W[i].T, W[j])
             link = beta[0] + beta[1] * (degree_two_way[i, j] - 2 * potential_triangles)  + beta[2] * potential_triangles
@@ -177,113 +181,10 @@ class ergm_DMH:
     def beta_sampling(self, rr = 2400, burnin = 800):
         self.beta_updating('burnin', burnin)
         self.beta_updating('sampling', rr)
-        return self.beta
-
-def visualize_DGP(Wn):
-    W_temp = Wn[500:]
-    edges = []
-    edges_count = []
-
-    maximum_degree = []
-    for i in range(0, len(W_temp)):
-        edges.append(np.sum(np.sum(W_temp[i])/2))
-        maximum_degree.append(max(np.sum(W_temp[i], axis=0)))
-        for j in range(0, len(W_temp[i])):
-            edges_count.append(np.sum(W_temp[i][j]))
-    plt.figure(figsize=(10, 7))
-    plt.hist(edges_count, color = "skyblue")
-    plt.title("Degree Distribution")
-    plt.plot()
-    # plt.hist(edges)
-    # show the density plot
-    plt.figure(figsize=(10, 7))
-    sns.kdeplot(x = edges, y = maximum_degree, cmap="Blues", fill=True, thresh=0.05)
-    plt.xlabel("# of edges")
-    plt.ylabel("Maximum degree")
-    plt.title("Density plot of # of edges and the maximum degree")
-    plt.plot()
-    return edges, maximum_degree
-
-def trace_plot(beta_list, beta_hat, save = True, name = None):
-    plt.figure(figsize=(10, 7))
-    for i in range(0, len(beta_hat)):
-        plt.subplot(2, 2, i+1)
-        for j in range(0, len(beta_list)):
-            beta = np.array(beta_list[j])
-            plt.plot(beta[:, i], label = f"chain{j+1}")
-            plt.legend()
-            plt.title(f"beta{i}")
-    if save == True:
-        plt.savefig(f"trace_plot_{name}.png")
-    plt.plot()
-    beta_mixed = beta_list[0]
-    for i in range(1, len(beta_list)):
-        beta_mixed = np.concatenate((beta_mixed, beta_list[i]))
-    beta_mixed = np.array(beta_mixed)
-    result = corner.corner(beta, labels=["beta0", "beta1", "beta2", "beta3"], truths=beta_hat)
-    if save == True:
-        plt.savefig(f"corner_plot_{name}.png")
-    plt.plot()
-    return 
+        beta = np.array(self.beta).reshape((len(self.beta), 3))
+        beta0 = beta[:, 0]
+        beta1 = beta[:, 1]
+        beta2 = beta[:, 2]
+        beta_frame = pd.DataFrame({'beta0': beta0, 'beta1': beta1, 'beta2': beta2})
+        return beta_frame
     
-#%% define parameters
-N = 40
-beta_hat = [-3.5, 0.1, 0.5]
-# X = np.ones(N)
-# X[:20] = 0
-# sig2 = 0.01
-# ltnt = 0
-# X = np.ones((N, 1))
-# X[: int(N / 2)] = 0
-# Z = sig2 * np.random.randn(N, 1)
-Wn = network_metropolis(N, beta_hat, r=30000)
-W = Wn[-1]
-print(f"# of edges: {np.sum(np.sum(W))/2}")
-print(f"number of two stars: {np.sum(np.triu(np.dot(W, W), k = 1))}")
-print(f"number of triangles: {int(np.trace(np.dot(np.dot(W, W), W))/6)}")
-print(f"max degree: {np.max(np.sum(W, axis=0))}")
-visualize_DGP(Wn)
-json_serializable_list = [arr.tolist() for arr in Wn]
-
-import networkx as nx
-G = nx.from_numpy_array(W)
-plt.figure(figsize=(7, 7))
-nx.draw(G, with_labels=False, node_size=20, node_color="skyblue", edge_color="grey")
-plt.plot()
-#%% r sample
-import pandas as pd
-df = pd.read_csv('doc_save_test_1.csv')
-matrix = np.array(df)
-g = nx.from_numpy_array(matrix)
-plt.figure(figsize=(7, 7))
-nx.draw(g, with_labels=False, node_size=20, node_color="skyblue", edge_color="grey")
-
-#%% estimate beta
-beta_list = []
-chains = 1
-chain = 0
-for i in range(0, 1):
-    print(f"Running {chain+1}th chain...")
-    estimator = ergm_DMH(matrix)
-    beta = estimator.beta_sampling(rr = 4800, burnin = 1200)
-    # if len(beta) < 500:
-    #     print("Not enough samples")
-    #     continue
-    beta_list.append(beta[:int(len(beta)*0.85)])
-    chain += 1
-    if chain == chains:
-        break
-
-#%% Visualize DGP
-name = "1210_1"
-with open(f'Wn_{name}.json', 'w') as f:
-    json.dump(json_serializable_list, f)
-json_serializable_beta = [arr.tolist() for arr in beta_list]
-with open(f'beta_list_{name}.json', 'w') as f:
-    json.dump(json_serializable_beta, f)
-triang = trace_plot(beta_list, beta_hat, name)
-
-# %%
-triang = trace_plot(beta_list, beta_hat, save = False, name = None)
-
-# %%
