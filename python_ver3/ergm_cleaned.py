@@ -27,14 +27,14 @@ class ergm_DMH:
     def adjust_step_size(self, a1, a2, i):
         acc_rate = self.acc / (100)
         self.acc = 0  
-        if acc_rate > 0.7:
-            self.step = self.step * 1.4
-            a1 = min(a1 * 0.6, 1)
-            a2 = 1 - a1
-        elif acc_rate < 0.3:
-            self.step = self.step * 2
-            a1 = min(a1 * 0.5, 1)
-            a2 = 1 - a1
+        # if acc_rate > 0.7:
+        #     self.step = self.step * 1.4
+        #     a1 = min(a1 * 0.6, 1)
+        #     a2 = 1 - a1
+        # elif acc_rate < 0.3:
+        #     self.step = self.step * 2
+        #     a1 = min(a1 * 0.5, 1)
+        #     a2 = 1 - a1
         if i != 0:
             print("beta =", self.beta_load[-1])
             print("acc_rate =", acc_rate)
@@ -61,7 +61,7 @@ class ergm_DMH:
             if i % 100 == 0 and i != 0:
                 a1, a2, acc_rate = self.adjust_step_size(a1, a2, i)
                 if acc_rate == 0:
-                    current_beta = self.beta_load[-(25 + r)]
+                    current_beta = self.beta_load[-(25)]
                     current_network, network_acc_rate = self.auxiliary_network(current_beta)
                     continue
             proposed_beta = self.adaptive_beta(current_beta, a1, a2)
@@ -122,7 +122,7 @@ class ergm_DMH:
             # log_p = link   
             log_p = link - np.log(1 + np.exp(link))
             p = ((-1) ** W[i, j]) * log_p
-            if np.log(np.random.rand()) <= p:
+            if np.log(np.random.rand()) <= min(p, 0):
                 W[i, j] = 1 - W[i, j]
                 W[j, i] = W[i, j]
                 Wn.append(W.copy())
@@ -225,7 +225,7 @@ def trace_plot(beta_list, beta_hat, name):
     
 #%% define parameters
 N = 40
-beta_hat = [-3.5, 0.05, 0.5]
+beta_hat = [-3.5, 0.1, 0.5]
 # X = np.ones(N)
 # X[:20] = 0
 # sig2 = 0.01
@@ -233,7 +233,7 @@ beta_hat = [-3.5, 0.05, 0.5]
 # X = np.ones((N, 1))
 # X[: int(N / 2)] = 0
 # Z = sig2 * np.random.randn(N, 1)
-Wn = network_metropolis(N, beta_hat, r=30000)
+Wn = network_metropolis(N, beta_hat, r=120000)
 W = Wn[-1]
 print(f"# of edges: {np.sum(np.sum(W))/2}")
 print(f"number of two stars: {np.sum(np.triu(np.dot(W, W), k = 1))}")
@@ -242,19 +242,23 @@ print(f"max degree: {np.max(np.sum(W, axis=0))}")
 visualize_DGP(Wn)
 json_serializable_list = [arr.tolist() for arr in Wn]
 
-
 import networkx as nx
 G = nx.from_numpy_array(W)
 plt.figure(figsize=(7, 7))
 nx.draw(G, with_labels=False, node_size=20, node_color="skyblue", edge_color="grey")
 plt.plot()
+#%% r sample
+import pandas as pd
+df = pd.read_csv('doc_save_test_1.csv')
+matrix = np.array(df)
+
 #%% estimate beta
 beta_list = []
 chains = 1
 chain = 0
 for i in range(0, 1):
     print(f"Running {chain+1}th chain...")
-    estimator = ergm_DMH(W)
+    estimator = ergm_DMH(matrix)
     beta = estimator.beta_sampling(rr = 4800, burnin = 1200)
     # if len(beta) < 500:
     #     print("Not enough samples")
