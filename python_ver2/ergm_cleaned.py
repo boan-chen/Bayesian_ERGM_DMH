@@ -117,7 +117,8 @@ class ergm_DMH:
             degree = np.sum(W, axis=0)
             degree = degree.reshape((N, 1))
             degree_two_way = degree + degree.T
-            link = beta[0] + beta[1] * degree_two_way[i, j] + beta[2] * np.dot(W[i].T, W[j])
+            potential_triangles = np.dot(W[i].T, W[j])
+            link = beta[0] + beta[1] * (degree_two_way[i, j] - 2 * potential_triangles)  + beta[2] * potential_triangles
             # log_p = link   
             log_p = link - np.log(1 + np.exp(link))
             p = ((-1) ** W[i, j]) * log_p
@@ -224,7 +225,7 @@ def trace_plot(beta_list, beta_hat, name):
     
 #%% define parameters
 N = 40
-beta_hat = [-3, 0.01, 0.5]
+beta_hat = [-3.5, 0.05, 0.5]
 # X = np.ones(N)
 # X[:20] = 0
 # sig2 = 0.01

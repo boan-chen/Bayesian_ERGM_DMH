@@ -20,7 +20,8 @@ def network_metropolis(N, beta, r):
         degree = np.sum(W, axis=0)
         degree = degree.reshape((N, 1))
         degree_two_way = degree + degree.T
-        link = beta[0] + beta[1] * degree_two_way[i, j] + beta[2] * np.dot(W[i].T, W[j])
+        potential_triangles = np.dot(W[i].T, W[j])
+        link = beta[0] + beta[1] *(degree_two_way[i, j] - 2 * potential_triangles)  + beta[2] * potential_triangles
         # log_p = link   
         log_p = link - np.log(1 + np.exp(link))
         p = ((-1) ** W[i, j]) * log_p
