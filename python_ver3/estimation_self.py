@@ -1,10 +1,7 @@
 #%%
 import numpy as np
 from scipy.stats import multivariate_normal as mvnorm
-from tqdm import tqdm
 import matplotlib.pyplot as plt
-import seaborn as sns
-import json
 from DGP import network_metropolis
 from DMH import ergm_DMH
 import networkx as nx
@@ -15,9 +12,9 @@ import pandas as pd
 import networkx as nx
 
 def run_chain(chain_num, matrix):
-    estimator = ergm_DMH(matrix)
+    estimator = ergm_DMH(matrix, aux = 2500)
     print(f"Running chain {chain_num}...")
-    beta = estimator.beta_sampling(rr=4800, burnin=1200)
+    beta = estimator.beta_sampling(rr=48, burnin=12)
     return beta[:int(len(beta)*0.85)]
 
 if __name__ == '__main__':
@@ -31,7 +28,6 @@ if __name__ == '__main__':
     print(f"number of two stars: {np.sum(np.triu(np.dot(W, W), k = 1)) - triangles}")
     print(f"number of triangles: {triangles}")
     print(f"max degree: {np.max(np.sum(W, axis=0))}")
-    visualize_DGP(Wn)
     json_serializable_list = [arr.tolist() for arr in Wn]
 
     G = nx.from_numpy_array(W)
@@ -52,6 +48,7 @@ if __name__ == '__main__':
     name = "1211_python"
     beta_estimation.to_csv(f'beta_estimation_{name}.csv', index=False)
     beta_hat = [-3.5, 0.1, 0.5]
+    visualize_DGP(Wn, save = True, name = name)
     triang = trace_plot(beta_estimation, beta_hat, save = True, name = name)
 
 

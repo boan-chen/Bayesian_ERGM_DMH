@@ -11,13 +11,14 @@ from DGP import network_metropolis
 import pandas as pd
 #%%
 class ergm_DMH:
-    def __init__(self, Wn):
+    def __init__(self, Wn, aux = 2500):
         self.Wn = Wn
         self.step = 0.3
         self.acc = 0
         self.beta_load = []
         self.beta = []
         self.N = len(Wn[0])
+        self.aux = aux
         self.parascales = np.array([1, 1/self.N, 1/np.sqrt(self.N)])
         observed_edges = self.calculate_statistics(Wn)[0]
         self.naive_prob = np.log(observed_edges / (self.N * (self.N - 1)))
@@ -63,7 +64,7 @@ class ergm_DMH:
             if i % 100 == 0 and i != 0:
                 a1, a2, acc_rate = self.adjust_step_size(a1, a2, i)
                 if acc_rate == 0:
-                    current_beta = self.beta_load[-(25)]
+                    current_beta = self.beta_load[max(-25, -1)]
                     current_network, network_acc_rate = self.auxiliary_network(current_beta)
                     continue
             proposed_beta = self.adaptive_beta(current_beta, a1, a2)
@@ -104,7 +105,8 @@ class ergm_DMH:
             print("Sampling phase finished.")
             return self.beta, acc_rate
 
-    def auxiliary_network(self, beta, r=20000):
+    def auxiliary_network(self, beta):
+        r = self.aux
         Wn = []
         H = np.ones((self.N, self.N)) * beta[0]
         # if the element of H is larger than the log uniform (0, 1), then the element is 1
@@ -119,8 +121,7 @@ class ergm_DMH:
             if i == j:
                 continue
             degree = np.sum(W, axis=0)
-            degree = degree.reshape((self.N, 1))
-            degree_two_way = degree + degree.T
+            degree_two_way = degree.reshape(1, self.N) + degree.reshape(1, self.N).T
             potential_triangles = np.dot(W[i].T, W[j])
             link = beta[0] + beta[1] * (degree_two_way[i, j] - 2 * potential_triangles)  + beta[2] * potential_triangles
             # log_p = link   
