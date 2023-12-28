@@ -30,6 +30,6 @@ def network_metropolis(N, beta, r):
             Wn.append(W.copy())
     print(f"acceptance rate: {len(Wn) / r}")
     # print(log_p)
-    return degree, degree_two_way, potential_triangles, Wn
+    return Wn
 
 # %%

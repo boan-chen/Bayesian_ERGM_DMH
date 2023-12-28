@@ -19,6 +19,7 @@ class ergm_DMH:
         self.beta = []
         self.N = len(Wn[0])
         self.aux = aux
+        self.resample = 30000
         self.parascales = np.array([1, 1/self.N, 1/np.sqrt(self.N)])
         observed_edges = self.calculate_statistics(Wn)[0]
         self.naive_prob = np.log(observed_edges / (self.N * (self.N - 1)))
@@ -68,7 +69,7 @@ class ergm_DMH:
                     current_network, network_acc_rate = self.auxiliary_network(current_beta)
                     continue
             proposed_beta = self.adaptive_beta(current_beta, a1, a2)
-            proposed_network, network_acc_rate = self.auxiliary_network(proposed_beta)
+            proposed_network, network_acc_rate = self.auxiliary_network(proposed_beta, W0 = current_network)
             if network_acc_rate < 0.02:
                 invalid_counter += 1
                 continue
@@ -105,15 +106,18 @@ class ergm_DMH:
             print("Sampling phase finished.")
             return self.beta, acc_rate
 
-    def auxiliary_network(self, beta):
-        r = self.aux
+    def auxiliary_network(self, beta, W0 = None):
         Wn = []
-        H = np.ones((self.N, self.N)) * beta[0]
-        # if the element of H is larger than the log uniform (0, 1), then the element is 1
-        # otherwise, the element is 0
-        
-        W = np.where(H > np.log(np.random.rand(self.N, self.N)), 1, 0)
-        np.fill_diagonal(W, 0)
+        if W0 is not None:
+            W = W0.copy()
+            r = self.aux
+        else:
+            H = np.ones((self.N, self.N)) * beta[0]
+            # if the element of H is larger than the log uniform (0, 1), then the element is 1
+            # otherwise, the element is 0
+            W = np.where(H > np.log(np.random.rand(self.N, self.N)), 1, 0)
+            np.fill_diagonal(W, 0)
+            r = self.resample
         for _ in range(r):
             # randomly select i and j
             i = random.randint(0, self.N - 1)
