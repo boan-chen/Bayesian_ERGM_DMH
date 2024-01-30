@@ -34,7 +34,7 @@ if __name__ == '__main__':
     plt.figure(figsize=(7, 7))
     nx.draw(G, with_labels=False, node_size=20, node_color="skyblue", edge_color="grey")
     plt.plot()
-    chains = 6
+    chains = 4
     matrix = W
     with multiprocessing.Pool(processes=chains) as pool:
         results = pool.starmap(run_chain, [(i+1, matrix) for i in range(chains)])

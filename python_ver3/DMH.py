@@ -130,7 +130,7 @@ class ergm_DMH:
             link = beta[0] + beta[1] * (degree_two_way[i, j] - 2 * potential_triangles)  + beta[2] * potential_triangles
             # log_p = link   
             log_p = link - np.log(1 + np.exp(link))
-            p = ((-1) ** W[i, j]) * log_p
+            p = (1 - W[i, j]) * log_p + W[i, j] * np.log(1 - np.exp(log_p))
             if np.log(np.random.rand()) <= min(p, 0):
                 W[i, j] = 1 - W[i, j]
                 W[j, i] = W[i, j]
@@ -170,9 +170,10 @@ class ergm_DMH:
         # dbeta = beta1 - beta0
         diff = np.dot(ZZ1, beta0.T) + np.dot(ZZ0, beta1.T) - np.dot(ZZ0, beta0.T) - np.dot(ZZ1, beta1.T)
         # diff = np.dot(dzz, -dbeta.T)
-        log_pdf_beta1 = mvnorm.logpdf(beta1, mean=np.zeros(len(beta1)), cov=100*np.eye(len(beta1)))
-        log_pdf_beta0 = mvnorm.logpdf(beta0, mean=np.zeros(len(beta0)), cov=100*np.eye(len(beta0)))
-        pp = diff + log_pdf_beta1 - log_pdf_beta0
+        # log_pdf_beta1 = mvnorm.logpdf(beta1, mean=np.zeros(len(beta1)), cov=100*np.eye(len(beta1)))
+        # log_pdf_beta0 = mvnorm.logpdf(beta0, mean=np.zeros(len(beta0)), cov=100*np.eye(len(beta0)))
+        # pp = diff + log_pdf_beta1 - log_pdf_beta0
+        pp = diff
         # print(pp)
         return pp
 

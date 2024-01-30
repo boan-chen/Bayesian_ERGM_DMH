@@ -26,7 +26,6 @@ stats_array = np.array(stats_list).reshape((len(stats_list), 3))
 edges = stats_array[:, 0]
 two_stars = stats_array[:, 1]
 triangles = stats_array[:, 2]
-    
 # %%
 stats_frame = pd.DataFrame({'edges': edges, 'two_stars': two_stars, 'triangles': triangles})
 columns_of_interest = ['edges', 'two_stars', 'triangles']

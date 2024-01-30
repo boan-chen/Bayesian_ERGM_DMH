@@ -23,7 +23,7 @@ def network_metropolis(N, beta, r):
         link = beta[0] + beta[1] *(degree_two_way[i, j] - 2 * potential_triangles)  + beta[2] * potential_triangles
         # log_p = link   
         log_p = link - np.log(1 + np.exp(link))
-        p = ((-1) ** W[i, j]) * log_p
+        p = (1 - W[i, j]) * log_p + W[i, j] * np.log(1 - np.exp(log_p))
         if np.log(np.random.rand()) <= p:
             W[i, j] = 1 - W[i, j]
             W[j, i] = W[i, j]

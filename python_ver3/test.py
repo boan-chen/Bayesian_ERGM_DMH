@@ -26,7 +26,6 @@ estimator = ergm_DMH(W, aux = 2500)
 estimator.a1 = 0.2
 estimator.a2 = 0.8
 beta1, _ = estimator.beta_updating('sampling', 10)
-#%%
-W_new, _ = estimator.auxiliary_network(beta1[-1])
-print(f"# of edges: {np.sum(np.sum(W_new))}")
+W_new, _ = estimator.auxiliary_network(beta1[-1], W0 = W)
+
 # %%

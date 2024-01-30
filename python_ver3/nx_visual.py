@@ -17,7 +17,7 @@ def visualize_DGP(Wn, burnin = 500, save = True, name = None):
 
     maximum_degree = []
     for i in range(0, len(W_temp)):
-        edges.append(np.sum(np.sum(W_temp[i])/2))
+        edges.append(np.sum(np.sum(W_temp[i])))
         maximum_degree.append(max(np.sum(W_temp[i], axis=0)))
         for j in range(0, len(W_temp[i])):
             edges_count.append(np.sum(W_temp[i][j]))
